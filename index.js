@@ -1,25 +1,26 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config()
-const { MongoClient, ServerApiVersion } = require('mongodb');
-const app = express()
-const port = process.env.PORT || 5000;
+const jwt = require('jsonwebtoken');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+require('dotenv').config();
 
-// middleware
-app.use(cors());
+const app = express();
+const port = process.env.PORT || 8000;
+
+// Middleware
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "https://shopsmart156.netlify.app",
+    "https://api.imgbb.com/1/upload?key=19c9072b07556f7849d6dea75b7e834d",
+  ],
+  credentials: true
+}));
 app.use(express.json());
 
-// shoppingBd
-// azvTHhg8fDMI8Xr0
-
-
-
-
- const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.mzwb7mf.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
-
-
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+// MongoDB Connection
+const uri = 'mongodb+srv://emrandu1989:emran5200@cluster0.7h7v6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -30,24 +31,204 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
-    // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    // await client.connect();
+    console.log("Connected to MongoDB");
+
+    const db = client.db('shoppingBD');
+    const userCollection = db.collection('user');
+
+    const testimonialsCollection = db.collection('testimonials');
+    const productsCollection = db.collection('products');
+    const cartCollection = db.collection('cart');
+
+    // JWT Route
+    app.post('/jwt', async (req, res) => {
+      const { email } = req.body;
+      const token = jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
+      res.send({ token });
+    });
+
+
+
+    // Cart Related Api 
+    app.get('/carts', async (req, res) => {
+      const cart = await cartCollection.find().toArray();
+      res.send(cart);
+    });
+
+    app.post('/cart', async (req, res) => {
+      const newitem = req.body;
+      const result = await cartCollection.insertOne(newitem);
+      res.status(201).send(result);
+
+    });
+
+    app.delete('/carts/:id', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) }
+      const result = await cartCollection.deleteOne(query);
+      res.send(result);
+    })
+    app.delete('/cartss/:email', async (req, res) => {
+      const email = req.params.email;
+      try {
+        const query = { userEmail: email };
+        const result = await cartCollection.deleteMany(query);
+        if (result.deletedCount > 0) {
+          res.send({ message: 'Cart items deleted successfully' });
+        } else {
+          res.status(404).send({ message: 'No items found for this email' });
+        }
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to delete items from cart' });
+      }
+    });
+
+
+
+
+    // Products Route with Pagination
+    app.get('/products', async (req, res) => {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const skip = (page - 1) * limit;
+
+      try {
+        const totalProducts = await productsCollection.countDocuments();
+        const products = await productsCollection.find().skip(skip).limit(limit).toArray();
+
+        res.send({
+          products,
+          currentPage: page,
+          totalPages: Math.ceil(totalProducts / limit),
+          totalProducts
+        });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch products' });
+      }
+    });
+    app.get('/product/:id', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) }
+      const result = await productsCollection.findOne(query);
+      res.send(result);
+    })
+
+
+
+    // Testimonials Routes
+    app.get('/testimonials', async (req, res) => {
+      const testimonials = await testimonialsCollection.find().toArray();
+      res.send(testimonials);
+    });
+
+    app.post('/testimonial', async (req, res) => {
+      const newComment = req.body;
+      try {
+        const result = await testimonialsCollection.insertOne(newComment);
+        res.status(201).send(result);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to add comment' });
+      }
+    });
+
+    // Users Routes
+    app.get('/users', async (req, res) => {
+      const users = await userCollection.find().toArray();
+      res.send(users);
+    });
+
+    app.get('/users/:email', async (req, res) => {
+      const email = req.params.email;
+      const user = await userCollection.findOne({ email });
+      res.send(user);
+    });
+
+    app.delete('/users/:email', async (req, res) => {
+      const email = req.params.email;
+      try {
+        const result = await userCollection.deleteOne({ email });
+        if (result.deletedCount > 0) {
+          res.send({ message: 'User deleted successfully' });
+        } else {
+          res.status(404).send({ message: 'User not found' });
+        }
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to delete user' });
+      }
+    });
+
+    app.put('/user', async (req, res) => {
+      const user = req.body;
+      const query = { email: user.email };
+      const updateDoc = {
+        $set: user,
+        $setOnInsert: { timestamp: Date.now() }
+      };
+      const options = { upsert: true };
+      try {
+        const result = await userCollection.updateOne(query, updateDoc, options);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to update user' });
+      }
+    });
+
+    app.post('/user', async (req, res) => {
+      const newUser = req.body;
+      try {
+        const result = await userCollection.insertOne(newUser);
+        res.status(201).send(result);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to register user' });
+      }
+    });
+
+    app.get('/logout', (req, res) => {
+      try {
+        res.clearCookie('token', {
+          maxAge: 0,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+        }).send({ success: true });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to log out' });
+      }
+    });
+
+    app.get('/', (req, res) => {
+      res.send('Server is running');
+    });
+
+    app.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
+    });
+
   } finally {
-    // Ensures that the client will close when you finish/error
-    await client.close();
+    process.on('SIGINT', async () => {
+      // await client.close();
+      // process.exit(0);
+    });
   }
 }
-run().catch(console.dir);
+
+run().catch(console.error);
 
 
 
-app.get('/', (req, res)=>{
-      res.send('Coffee making server is running')
-})
 
-app.listen(port, ()=>{
-       console.log(`Coffee Server is running on port: ${port}`)
-})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

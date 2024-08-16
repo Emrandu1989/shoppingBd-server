@@ -10,6 +10,7 @@ const port = process.env.PORT || 8000;
 app.use(cors({
   origin: [
     "http://localhost:5173",
+    "https://shopbd123.netlify.app",
     "http://localhost:5174",
 
   ],
@@ -18,13 +19,13 @@ app.use(cors({
 app.use(express.json());
 
 // MongoDB Connection
-const uri = 'mongodb+srv://emrandu1989:emran5200@cluster0.7h7v6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
+const uri = `${process.env.DBURI}`;
 const client = new MongoClient(uri, {
   serverApi: { 
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  }
+  } 
 });
 
 async function run() {
